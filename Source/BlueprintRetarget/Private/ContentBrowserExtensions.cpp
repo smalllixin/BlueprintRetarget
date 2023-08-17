@@ -4,7 +4,7 @@
 
 #include <CoreGlobals.h>
 #include <AssetToolsModule.h>
-#include <AssetRegistryModule.h>
+#include <AssetRegistry/AssetRegistryModule.h>
 #include <ContentBrowserModule.h>
 #include <IContentBrowserSingleton.h>
 #include <EditorStyleSet.h>
@@ -119,7 +119,7 @@ struct FRetargetClassExtension : public FContentBrowserSelectedAssetExtensionBas
 		for (auto AssetIt = SelectedAssets.CreateConstIterator(); AssetIt; ++AssetIt)
 		{
 			const FAssetData& AssetData = *AssetIt;
-			if (TAssetPtr<UBlueprint> BP = Cast<UBlueprint>(AssetData.GetAsset()))
+			if (TSoftObjectPtr<UBlueprint> BP = Cast<UBlueprint>(AssetData.GetAsset()))
 			{
 				BPs.Add(BP.Get());
 			}
@@ -159,7 +159,8 @@ struct FRetargetClassExtension : public FContentBrowserSelectedAssetExtensionBas
 			Options.bIsBlueprintBaseOnly = true; // Only want blueprint base classes
 			Options.bShowUnloadedBlueprints = true;
 
-			Options.ClassFilter = PrepareFilter(BPs);
+			TSharedPtr<IClassViewerFilter> CF = PrepareFilter(BPs);
+			Options.ClassFilters.Add(CF.ToSharedRef());
 		}
 
 		// Temporally hide custom picker from ClassPicker
@@ -317,7 +318,7 @@ struct FRetargetClassExtension : public FContentBrowserSelectedAssetExtensionBas
 
 			if (bReparent)
 			{
-				UE_LOG(LogBlueprintReparent, Warning, TEXT("Reparenting blueprint %s from %s to %s..."), *Blueprint->GetFullName(), Blueprint->ParentClass ? *Blueprint->ParentClass->GetName() : TEXT("[None]"), *ChosenClass->GetName());
+				UE_LOG(LogTemp, Warning, TEXT("Reparenting blueprint %s from %s to %s..."), *Blueprint->GetFullName(), Blueprint->ParentClass ? *Blueprint->ParentClass->GetName() : TEXT("[None]"), *ChosenClass->GetName());
 
 				UClass* OldParentClass = Blueprint->ParentClass;
 				Blueprint->ParentClass = ChosenClass;
@@ -332,23 +333,23 @@ struct FRetargetClassExtension : public FContentBrowserSelectedAssetExtensionBas
 				// Ensure that the Blueprint is up-to-date (valid SCS etc.) after compiling (new parent class)
 				EnsureBlueprintIsUpToDate(Blueprint);
 
-				if (Blueprint->NativizationFlag != EBlueprintNativizationFlag::Disabled)
-				{
-					UBlueprint* ParentBlueprint = UBlueprint::GetBlueprintFromClass(ChosenClass);
-					if (ParentBlueprint && ParentBlueprint->NativizationFlag == EBlueprintNativizationFlag::Disabled)
-					{
-						ParentBlueprint->NativizationFlag = EBlueprintNativizationFlag::Dependency;
-
-						FNotificationInfo Warning(FText::Format(
-							LOCTEXT("InterfaceFlaggedForNativization", "{0} flagged for nativization (as a required dependency)."),
-							FText::FromName(ParentBlueprint->GetFName())
-						));
-						Warning.ExpireDuration = 5.0f;
-						Warning.bFireAndForget = true;
-						Warning.Image = FCoreStyle::Get().GetBrush(TEXT("MessageLog.Warning"));
-						FSlateNotificationManager::Get().AddNotification(Warning);
-					}
-				}
+				// if (Blueprint->NativizationFlag != EBlueprintNativizationFlag::Disabled)
+				// {
+				// 	UBlueprint* ParentBlueprint = UBlueprint::GetBlueprintFromClass(ChosenClass);
+				// 	if (ParentBlueprint && ParentBlueprint->NativizationFlag == EBlueprintNativizationFlag::Disabled)
+				// 	{
+				// 		ParentBlueprint->NativizationFlag = EBlueprintNativizationFlag::Dependency;
+				//
+				// 		FNotificationInfo Warning(FText::Format(
+				// 			LOCTEXT("InterfaceFlaggedForNativization", "{0} flagged for nativization (as a required dependency)."),
+				// 			FText::FromName(ParentBlueprint->GetFName())
+				// 		));
+				// 		Warning.ExpireDuration = 5.0f;
+				// 		Warning.bFireAndForget = true;
+				// 		Warning.Image = FCoreStyle::Get().GetBrush(TEXT("MessageLog.Warning"));
+				// 		FSlateNotificationManager::Get().AddNotification(Warning);
+				// 	}
+				// }
 
 				/*if (SCSEditor.IsValid())
 				{
@@ -467,7 +468,7 @@ public:
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("RetargetClass", "Retarget invalid parent"),
 			LOCTEXT("RetargetClass_Tooltip", "Reparents a blueprint's parent class (Useful when parent class is missing or invalid)"),
-			FSlateIcon(FEditorStyle::GetStyleSetName(), "ClassIcon.Note"),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.Note"),
 			Action_RetargetClass,
 			NAME_None,
 			EUserInterfaceActionType::Button);
@@ -503,7 +504,7 @@ public:
 		return ContentBrowserModule.GetAllAssetViewContextMenuExtenders();
 	}
 
-	static bool IsInvalidBlueprint(const TAssetPtr<UBlueprint>& BP) {
+	static bool IsInvalidBlueprint(const TSoftObjectPtr<UBlueprint>& BP) {
 		return BP && (!BP->SkeletonGeneratedClass || !BP->GeneratedClass);
 	}
 };
